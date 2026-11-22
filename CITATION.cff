@@ -1,0 +1,16 @@
+cff-version: 1.2.0
+message: "If you use this code, please cite it as below."
+title: "Transparent electrodes for solar cells: a simulation study"
+authors:
+  - family-names: Deonarine
+    given-names: Brandon
+    affiliation: "The University of the West Indies, St. Augustine"
+date-released: 2026-11-21
+license: MIT
+keywords:
+  - transparent conducting oxides
+  - photovoltaics
+  - Drude model
+  - transfer-matrix method
+  - solar cells
+repository-code: "https://github.com/M3RCU3Y/transparent-electrode-simulation"

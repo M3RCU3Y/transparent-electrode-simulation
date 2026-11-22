@@ -1,0 +1,146 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg viewBox="0 88 1280 584" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="architecture-title architecture-desc" id="architecture-root">
+<title id="architecture-title">How the simulation code fits together</title>
+<desc id="architecture-desc">Architecture of the PHYS 3153 transparent-electrode simulation: physics, material and optics modules feed the device model, which two driver scripts run to write the data files that the report plots.</desc>
+<defs>
+      <style>@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&amp;family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@400;500;600&amp;family=Noto+Serif:ital@0;1&amp;family=Noto+Sans+KR:wght@400;500;600&amp;family=Noto+Serif+KR:wght@400&amp;family=Noto+Sans+TC:wght@400;500;600&amp;family=Noto+Serif+TC:wght@400&amp;display=swap');
+      #architecture-root { --color-paper: #f6f4ef; --color-paper-2: #eef2f7;
+      --color-ink: #1b2f4b; --color-muted: #3d5a80; --color-soft: #566880;
+      --color-rule: rgba(27,47,75,0.12);
+      --color-accent: #1f6f66; --color-accent-tint: rgba(42,157,143,0.10);
+      --font-sans: 'Geist', system-ui, sans-serif;
+      --font-serif: 'Instrument Serif', serif;
+      --font-mono: 'Geist Mono', ui-monospace, monospace; }
+      #architecture-root { font-family: var(--font-sans); color: var(--color-ink); }
+      #architecture-root .container { max-width: 1280px; margin: 0 auto; }
+      #architecture-root .header-eyebrow { font-family: var(--font-mono); font-size: 0.66rem; font-weight: 500; letter-spacing: 0.18em; text-transform: uppercase; color: var(--color-muted); margin-bottom: 0.75rem; }
+      #architecture-root .subtitle { font-size: 1rem; line-height: 1.55; color: var(--color-muted); max-width: 70ch; }
+      #architecture-root .diagram-container { width: 100%; overflow-x: auto; }
+      #architecture-root .card-header { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.875rem; padding-bottom: 0.875rem; border-bottom: 1px solid rgba(27,47,75,0.08); }
+      #architecture-root .card-dot { width: 7px; height: 7px; border-radius: 50%; }
+      #architecture-root .card-dot.ink { background: var(--color-ink); }
+      #architecture-root .card-dot.muted { background: var(--color-muted); }
+      #architecture-root .card-dot.coral { background: var(--color-accent); }
+      #architecture-root code { font-family: var(--font-mono); font-size: 0.78rem; color: var(--color-ink); }</style>
+<marker id="architecture-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#3d5a80"/></marker>
+<marker id="architecture-arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#1f6f66"/></marker>
+<marker id="architecture-arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#2e5aa8"/></marker>
+</defs>
+<rect x="0" y="88" width="1280" height="584" fill="#f6f4ef"/>
+<rect x="56" y="128" width="248" height="424" rx="8" fill="#1b2f4b" stroke="#1b2f4b" stroke-width="0.8" fill-opacity="0.02" stroke-opacity="0.1"/>
+<rect x="136" y="132" width="88" height="12" rx="2" fill="#f6f4ef"/>
+<text x="180" y="141" fill="#566880" font-size="7" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.14em">PHYSICS MODELS</text>
+<rect x="696" y="128" width="248" height="424" rx="8" fill="#1b2f4b" stroke="#1b2f4b" stroke-width="0.8" fill-opacity="0.02" stroke-opacity="0.1"/>
+<rect x="776" y="132" width="88" height="12" rx="2" fill="#f6f4ef"/>
+<text x="820" y="141" fill="#566880" font-size="7" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.14em">DRIVER SCRIPTS</text>
+<rect x="984" y="272" width="232" height="280" rx="8" fill="#1b2f4b" stroke="#1b2f4b" stroke-width="0.8" fill-opacity="0.02" stroke-opacity="0.1"/>
+<rect x="1074" y="276" width="52" height="12" rx="2" fill="#f6f4ef"/>
+<text x="1100" y="285" fill="#566880" font-size="7" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.14em">OUTPUTS</text>
+<path d="M 180,240 V 304" fill="none" stroke="#3d5a80" stroke-width="1.2" marker-end="url(#architecture-arrow)"/>
+<path d="M 280,200 H 400" fill="none" stroke="#3d5a80" stroke-width="1.2" marker-end="url(#architecture-arrow)"/>
+<path d="M 280,344 H 400" fill="none" stroke="#1f6f66" stroke-width="1.4" marker-end="url(#architecture-arrow-accent)"/>
+<path d="M 280,488 H 472 Q 480,488 480,480 V 384" fill="none" stroke="#3d5a80" stroke-width="1.2" marker-end="url(#architecture-arrow)"/>
+<path d="M 600,200 H 720" fill="none" stroke="#3d5a80" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#architecture-arrow)"/>
+<path d="M 600,328 H 772 Q 780,328 780,320 V 240" fill="none" stroke="#1f6f66" stroke-width="1.4" marker-end="url(#architecture-arrow-accent)"/>
+<path d="M 600,360 H 752 Q 760,360 760,368 V 448" fill="none" stroke="#3d5a80" stroke-width="1.2" marker-end="url(#architecture-arrow)"/>
+<path d="M 920,200 H 952 Q 960,200 960,208 V 322 Q 960,330 968,330 H 1000" fill="none" stroke="#3d5a80" stroke-width="1.2" marker-end="url(#architecture-arrow)"/>
+<path d="M 920,488 H 968 Q 976,488 976,480 V 366 Q 976,358 984,358 H 1000" fill="none" stroke="#3d5a80" stroke-width="1.2" marker-end="url(#architecture-arrow)"/>
+<path d="M 1100,384 V 448" fill="none" stroke="#3d5a80" stroke-width="1.2" marker-end="url(#architecture-arrow)"/>
+<rect x="188" y="266" width="56" height="12" rx="2" fill="#f6f4ef"/>
+<text x="216" y="275" fill="#566880" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">MATERIALS</text>
+<rect x="312" y="180" width="52" height="12" rx="2" fill="#f6f4ef"/>
+<text x="338" y="189" fill="#566880" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">SPECTRUM</text>
+<rect x="296" y="324" width="80" height="12" rx="2" fill="#f6f4ef"/>
+<text x="336" y="333" fill="#1f6f66" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">OPTICAL CONST</text>
+<rect x="356" y="468" width="48" height="12" rx="2" fill="#f6f4ef"/>
+<text x="380" y="477" fill="#566880" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">R, T, A</text>
+<rect x="640" y="180" width="36" height="12" rx="2" fill="#f6f4ef"/>
+<text x="658" y="189" fill="#566880" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">CHECK</text>
+<rect x="788" y="268" width="72" height="12" rx="2" fill="#f6f4ef"/>
+<text x="824" y="277" fill="#1f6f66" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">η PER DESIGN</text>
+<rect x="632" y="340" width="68" height="12" rx="2" fill="#f6f4ef"/>
+<text x="666" y="349" fill="#566880" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">SAME MODELS</text>
+<rect x="968" y="244" width="72" height="12" rx="2" fill="#f6f4ef"/>
+<text x="1004" y="253" fill="#566880" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">CSV + MACROS</text>
+<rect x="900" y="408" width="72" height="12" rx="2" fill="#f6f4ef"/>
+<text x="936" y="417" fill="#566880" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">CSV + MACROS</text>
+<rect x="1108" y="410" width="52" height="12" rx="2" fill="#f6f4ef"/>
+<text x="1134" y="419" fill="#566880" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">PGFPLOTS</text>
+<rect x="80" y="160" width="200" height="80" rx="6" fill="#f6f4ef"/>
+<rect x="80" y="160" width="200" height="80" rx="6" fill="#ffffff" stroke="#1b2f4b" stroke-width="1"/>
+<rect x="88" y="168" width="28" height="12" rx="2" fill="none" stroke="#1b2f4b" stroke-width="0.8" stroke-opacity="0.4"/>
+<text x="102" y="177" fill="#1b2f4b" font-size="7" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.08em">LIB</text>
+<text x="270" y="177" fill="#566880" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="end">376 lines</text>
+<text x="180" y="204" fill="#1b2f4b" font-size="13" font-weight="600" font-family="'Geist', system-ui, sans-serif" text-anchor="middle">physics.py</text>
+<text x="180" y="222" fill="#3d5a80" font-size="9" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle">Drude · band gap · mobility</text>
+<rect x="80" y="304" width="200" height="80" rx="6" fill="#f6f4ef"/>
+<rect x="80" y="304" width="200" height="80" rx="6" fill="#ffffff" stroke="#1b2f4b" stroke-width="1"/>
+<rect x="88" y="312" width="36" height="12" rx="2" fill="none" stroke="#1b2f4b" stroke-width="0.8" stroke-opacity="0.4"/>
+<text x="106" y="321" fill="#1b2f4b" font-size="7" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.08em">INPUT</text>
+<text x="270" y="321" fill="#566880" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="end">136 lines</text>
+<text x="180" y="348" fill="#1b2f4b" font-size="13" font-weight="600" font-family="'Geist', system-ui, sans-serif" text-anchor="middle">electrodes.py</text>
+<text x="180" y="366" fill="#3d5a80" font-size="9" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle">9 films: n and μ inputs</text>
+<rect x="80" y="448" width="200" height="80" rx="6" fill="#f6f4ef"/>
+<rect x="80" y="448" width="200" height="80" rx="6" fill="#ffffff" stroke="#1b2f4b" stroke-width="1"/>
+<rect x="88" y="456" width="40" height="12" rx="2" fill="none" stroke="#1b2f4b" stroke-width="0.8" stroke-opacity="0.4"/>
+<text x="108" y="465" fill="#1b2f4b" font-size="7" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.08em">OPTICS</text>
+<text x="270" y="465" fill="#566880" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="end">141 lines</text>
+<text x="180" y="492" fill="#1b2f4b" font-size="13" font-weight="600" font-family="'Geist', system-ui, sans-serif" text-anchor="middle">tmm.py</text>
+<text x="180" y="510" fill="#3d5a80" font-size="9" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle">thin-film optics (TMM)</text>
+<rect x="400" y="160" width="200" height="80" rx="6" fill="#f6f4ef"/>
+<rect x="400" y="160" width="200" height="80" rx="6" fill="#1b2f4b" stroke="#1b2f4b" stroke-width="1" stroke-dasharray="4,3" fill-opacity="0.02" stroke-opacity="0.3"/>
+<rect x="408" y="168" width="36" height="12" rx="2" fill="none" stroke="#1b2f4b" stroke-width="0.8" stroke-opacity="0.22"/>
+<text x="426" y="177" fill="#566880" font-size="7" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.08em">CHECK</text>
+<text x="590" y="177" fill="#566880" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="end">43 lines</text>
+<text x="500" y="204" fill="#1b2f4b" font-size="13" font-weight="600" font-family="'Geist', system-ui, sans-serif" text-anchor="middle">sq.py</text>
+<text x="500" y="222" fill="#3d5a80" font-size="9" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle">Shockley–Queisser check</text>
+<rect x="400" y="304" width="200" height="80" rx="6" fill="#f6f4ef"/>
+<rect x="400" y="304" width="200" height="80" rx="6" fill="#2a9d8f" stroke="#1f6f66" stroke-width="1" fill-opacity="0.10"/>
+<rect x="408" y="312" width="32" height="12" rx="2" fill="none" stroke="#1f6f66" stroke-width="0.8" stroke-opacity="0.50"/>
+<text x="424" y="321" fill="#1f6f66" font-size="7" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.08em">CORE</text>
+<text x="590" y="321" fill="#566880" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="end">318 lines</text>
+<text x="500" y="348" fill="#1b2f4b" font-size="13" font-weight="600" font-family="'Geist', system-ui, sans-serif" text-anchor="middle">device.py</text>
+<text x="500" y="366" fill="#3d5a80" font-size="9" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle">diode · grid · stripes</text>
+<rect x="720" y="160" width="200" height="80" rx="6" fill="#f6f4ef"/>
+<rect x="720" y="160" width="200" height="80" rx="6" fill="#ffffff" stroke="#1b2f4b" stroke-width="1"/>
+<rect x="728" y="168" width="28" height="12" rx="2" fill="none" stroke="#1b2f4b" stroke-width="0.8" stroke-opacity="0.4"/>
+<text x="742" y="177" fill="#1b2f4b" font-size="7" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.08em">RUN</text>
+<text x="910" y="177" fill="#566880" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="end">720 lines</text>
+<text x="820" y="204" fill="#1b2f4b" font-size="13" font-weight="600" font-family="'Geist', system-ui, sans-serif" text-anchor="middle">run_all.py</text>
+<text x="820" y="222" fill="#3d5a80" font-size="9" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle">all figures · Monte Carlo</text>
+<rect x="720" y="448" width="200" height="80" rx="6" fill="#f6f4ef"/>
+<rect x="720" y="448" width="200" height="80" rx="6" fill="#ffffff" stroke="#1b2f4b" stroke-width="1"/>
+<rect x="728" y="456" width="28" height="12" rx="2" fill="none" stroke="#1b2f4b" stroke-width="0.8" stroke-opacity="0.4"/>
+<text x="742" y="465" fill="#1b2f4b" font-size="7" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.08em">RUN</text>
+<text x="910" y="465" fill="#566880" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="end">166 lines</text>
+<text x="820" y="492" fill="#1b2f4b" font-size="13" font-weight="600" font-family="'Geist', system-ui, sans-serif" text-anchor="middle">opaque.py</text>
+<text x="820" y="510" fill="#3d5a80" font-size="9" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle">silver · thick ITO · grid</text>
+<rect x="1000" y="304" width="200" height="80" rx="6" fill="#f6f4ef"/>
+<rect x="1000" y="304" width="200" height="80" rx="6" fill="#1b2f4b" stroke="#3d5a80" stroke-width="1" fill-opacity="0.05"/>
+<rect x="1008" y="312" width="32" height="12" rx="2" fill="none" stroke="#3d5a80" stroke-width="0.8" stroke-opacity="0.50"/>
+<text x="1024" y="321" fill="#3d5a80" font-size="7" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.08em">DATA</text>
+<text x="1190" y="321" fill="#566880" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="end">~60 files</text>
+<text x="1100" y="348" fill="#1b2f4b" font-size="13" font-weight="600" font-family="'Geist', system-ui, sans-serif" text-anchor="middle">data/</text>
+<text x="1100" y="366" fill="#3d5a80" font-size="9" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle">*.csv · numbers.tex</text>
+<rect x="1000" y="448" width="200" height="80" rx="6" fill="#f6f4ef"/>
+<rect x="1000" y="448" width="200" height="80" rx="6" fill="#1b2f4b" stroke="#1b2f4b" stroke-width="1" fill-opacity="0.03" stroke-opacity="0.3"/>
+<rect x="1008" y="456" width="28" height="12" rx="2" fill="none" stroke="#1b2f4b" stroke-width="0.8" stroke-opacity="0.22"/>
+<text x="1022" y="465" fill="#566880" font-size="7" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.08em">PDF</text>
+<text x="1190" y="465" fill="#566880" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="end">main.tex → PDF</text>
+<text x="1100" y="492" fill="#1b2f4b" font-size="13" font-weight="600" font-family="'Geist', system-ui, sans-serif" text-anchor="middle">The report</text>
+<text x="1100" y="510" fill="#3d5a80" font-size="9" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle">pgfplots reads the CSVs</text>
+<line x1="56" y1="600" x2="1224" y2="600" stroke="#1b2f4b" stroke-width="0.8" stroke-opacity="0.1"/>
+<text x="56" y="618" fill="#3d5a80" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" letter-spacing="0.18em">LEGEND</text>
+<rect x="56" y="632" width="14" height="10" rx="2" fill="#2a9d8f" stroke="#1f6f66" stroke-width="1" fill-opacity="0.10"/>
+<text x="76" y="640" fill="#3d5a80" font-size="9" font-family="'Geist', system-ui, sans-serif">The core: scores one electrode in one device</text>
+<rect x="314" y="632" width="14" height="10" rx="2" fill="#ffffff" stroke="#1b2f4b" stroke-width="1"/>
+<text x="334" y="640" fill="#3d5a80" font-size="9" font-family="'Geist', system-ui, sans-serif">Python module</text>
+<rect x="427" y="632" width="14" height="10" rx="2" fill="#1b2f4b" stroke="#3d5a80" stroke-width="1" fill-opacity="0.05"/>
+<text x="447" y="640" fill="#3d5a80" font-size="9" font-family="'Geist', system-ui, sans-serif">Generated data</text>
+<rect x="544" y="632" width="14" height="10" rx="2" fill="#1b2f4b" stroke="#1b2f4b" stroke-width="1" stroke-dasharray="3,2" fill-opacity="0.02" stroke-opacity="0.3"/>
+<text x="564" y="640" fill="#3d5a80" font-size="9" font-family="'Geist', system-ui, sans-serif">Sanity check</text>
+<line x1="652" y1="637" x2="680" y2="637" stroke="#1f6f66" stroke-width="1.4" marker-end="url(#architecture-arrow-accent)"/>
+<text x="688" y="640" fill="#3d5a80" font-size="9" font-family="'Geist', system-ui, sans-serif">Main path of the calculation</text>
+<line x1="851" y1="637" x2="879" y2="637" stroke="#3d5a80" stroke-width="1.2" marker-end="url(#architecture-arrow)"/>
+<text x="887" y="640" fill="#3d5a80" font-size="9" font-family="'Geist', system-ui, sans-serif">Uses / feeds</text>
+</svg>

@@ -1,0 +1,318 @@
+"""
+device.py -- device-level evaluation of a transparent electrode.
+
+Two architectures:
+  SHJ : textured silicon-heterojunction cell, front electrode + Ag finger grid
+        (front-junction or rear-junction lateral transport)
+  PSK : perovskite superstrate cell in a monolithically interconnected
+        module (glass | electrode | perovskite), stripe width optimised
+
+Every electrode is described by a function returning, for a 'design
+variable' x (thickness in nm, layer count, or sheet resistance):
+    optics(x) -> (T_into_absorber(lambda), A_parasitic(lambda))
+    Rs(x)     -> sheet resistance (ohm/sq)
+"""
+import numpy as np
+from numpy import trapezoid
+import physics as ph
+import electrodes as el
+import tmm
+
+LAM = np.arange(300.0, 1201.0, 4.0)               # wavelengths the devices are evaluated on (nm)
+SPEC, SPEC_NAME = ph.load_spectrum(LAM)
+FLUX = ph.photon_flux(LAM, SPEC)                  # photons m^-2 s^-1 nm^-1
+
+# --------------------------------------------------------------------------- device settings
+# Silicon heterojunction cell (report Table 3.3)
+SHJ = dict(
+    Voc_ref=0.740,       # open-circuit voltage (V) ...
+    Jsc_ref=40.0,        # ... at this short-circuit current (mA/cm^2); sets the diode J0
+    n_id=1.0,            # diode ideality factor
+    r_other=0.25,        # every other series resistance (ohm cm^2)
+    w_f=35e-6,           # finger width (m)
+    h_f=15e-6,           # finger height (m)
+    rho_f=5e-8,          # resistivity of the low-temperature silver paste (ohm m)
+    L_half=7.8e-3,       # half the finger length, busbar to finger end (m)
+    busbar_shade=0.015,  # fraction of the cell shaded by busbars or wires
+    W_um=150.0,          # wafer thickness (um)
+    rho_wafer=1.5,       # wafer resistivity (ohm cm)
+)
+# Perovskite thin-film module
+PSK = dict(
+    Voc_ref=1.15,        # V
+    Jsc_ref=24.0,        # mA/cm^2
+    n_id=1.3,
+    r_other=1.0,         # ohm cm^2
+    dead=150e-6,         # width lost to the P1-P3 laser scribes between stripes (m)
+    glass_n=1.52,
+)
+AR_INDEX = 2.0      # ideal anti-reflection layer put on top of electrodes that are not themselves a film
+VT = ph.kB * 298.15 / ph.q    # thermal voltage at 25 C
+
+
+# ------------------------------------------------------------------ diode
+def diode_mpp(Jsc, J0, n_id):
+    """Maximum-power point of an ideal diode, found by scanning the voltage.
+    Returns (Voc, Vmp, Jmp, Pmp), currents in A/m^2."""
+    nVt = n_id * VT
+    Voc = nVt * np.log(Jsc / J0 + 1)
+    V = np.linspace(0, Voc, 3000)
+    J = Jsc - J0 * np.expm1(V / nVt)
+    P = V * J
+    i = np.argmax(P)
+    return Voc, V[i], J[i], P[i]
+
+
+def diode_mpp_vec(Jsc, J0, n_id, nV=1500):
+    """Same as diode_mpp, for a whole array of Jsc values at once."""
+    Jsc = np.atleast_1d(Jsc)
+    nVt = n_id * VT
+    Voc = nVt * np.log(Jsc / J0 + 1)
+    x = np.linspace(0, 1, nV)[None, :]
+    V = Voc[:, None] * x
+    P = V * (Jsc[:, None] - J0 * np.expm1(V / nVt))
+    i = np.argmax(P, axis=1)
+    r = np.arange(len(Jsc))
+    Vmp = V[r, i]
+    return Voc, Vmp, P[r, i] / Vmp, P[r, i]
+
+
+def J0_of(arch):
+    """Diode saturation current (A/m^2) that gives the reference Voc at the
+    reference Jsc, from Voc = n VT ln(Jsc / J0)."""
+    return arch["Jsc_ref"] * 10 / np.exp(arch["Voc_ref"] / (arch["n_id"] * VT))
+
+
+# ------------------------------------------------------------------ optics
+def jph(T_eff):
+    """Photocurrent density (A/m^2) for an effective absorbed fraction."""
+    return ph.q * trapezoid(FLUX * T_eff, LAM)
+
+
+# absorbers, worked out once on the device wavelength grid
+SI_LL = el.si_lambertian_absorption(LAM, SHJ["W_um"])
+SI_N = el.si_index(LAM)[0]
+PSK_ABS = el.perovskite_absorption(LAM)
+PSK_N = np.full_like(LAM, el.PEROVSKITE["n"], dtype=complex)
+
+
+def shj_optics_film(n_films, d_films):
+    """Light entering the textured silicon, and light lost in the films."""
+    Tin, Apar, R = tmm.textured_front_into_absorber(n_films, d_films, SI_N, LAM)
+    return Tin, Apar
+
+
+def psk_optics_film(n_films, d_films):
+    """Light entering the perovskite through the glass, and light lost in the films."""
+    Tin, Apar, R = tmm.superstrate_into_absorber(n_films, d_films, PSK["glass_n"], PSK_N, LAM)
+    return Tin, Apar
+
+
+_AR_CACHE = {}
+
+
+def shj_optics_ar_only():
+    """Silicon cell with only an ideal, lossless anti-reflection layer, at the
+    thickness that lets in the most current. Returns (current, Tin, thickness)."""
+    if "shj" not in _AR_CACHE:
+        best = None
+        for d in np.arange(50, 111, 2.0):
+            Tin, A = shj_optics_film([np.full_like(LAM, AR_INDEX, dtype=complex)], [d])
+            j = jph(Tin * SI_LL)
+            if best is None or j > best[0]:
+                best = (j, Tin, d)
+        _AR_CACHE["shj"] = best
+    return _AR_CACHE["shj"]
+
+
+def psk_optics_bare():
+    """Perovskite under bare glass, with no front layer at all."""
+    if "psk" not in _AR_CACHE:
+        Tin, A = psk_optics_film([], [])
+        _AR_CACHE["psk"] = Tin
+    return _AR_CACHE["psk"]
+
+
+def psk_optics_ideal():
+    """Lossless index-matching layer n = sqrt(n_glass n_abs) of optimal
+    thickness: the best a non-absorbing front electrode could do."""
+    if "psk_ideal" not in _AR_CACHE:
+        nm = np.sqrt(PSK["glass_n"] * el.PEROVSKITE["n"])
+        best = None
+        for d in np.arange(20, 400, 2.0):
+            Tin, A = psk_optics_film([np.full_like(LAM, nm, dtype=complex)], [d])
+            j = jph(Tin * PSK_ABS)
+            if best is None or j > best[0]:
+                best = (j, Tin, d)
+        _AR_CACHE["psk_ideal"] = best
+    return _AR_CACHE["psk_ideal"]
+
+
+# ------------------------------------------------------------------ losses
+def shj_evaluate(Tin, Apar, Rs_tco, junction="front", ideal=False):
+    """Efficiency of the SHJ cell for a given front electrode.
+    Optimises the finger spacing s. Returns dict with breakdown."""
+    p = SHJ
+    J0 = J0_of(p)
+    Jgen = jph(Tin * SI_LL)
+    if junction == "rear":
+        # with the junction at the back, the wafer itself also carries current sideways
+        Rs_w = p["rho_wafer"] * 1e-2 / (p["W_um"] * 1e-6)       # ohm/sq
+        Rs_eff = 1 / (1 / Rs_tco + 1 / Rs_w)
+    else:
+        Rs_eff = Rs_tco
+    s = np.linspace(0.4e-3, 6e-3, 225)                 # finger spacings to try (m)
+    shade = p["w_f"] / s + p["busbar_shade"]
+    Jsc = Jgen * (1 - shade)
+    Voc, Vmp, Jmp, Pmp = diode_mpp_vec(Jsc, J0, p["n_id"])
+    # fractional power losses at each spacing:
+    p_lat = Rs_eff * Jmp * s**2 / (12 * Vmp)           # sideways through the electrode
+    # along the fingers
+    p_fin = p["rho_f"] * Jmp * p["L_half"] ** 2 * s / (3 * Vmp * p["w_f"] * p["h_f"])
+    p_oth = p["r_other"] * 1e-4 * Jmp / Vmp            # everything else
+    P = Pmp * (1 - p_lat - p_fin - p_oth)
+    i = int(np.argmax(P))
+    best = dict(P=P[i], s=s[i], shade=shade[i], Jsc=Jsc[i], Voc=Voc[i], Pmp0=Pmp[i],
+                p_lat=p_lat[i], p_fin=p_fin[i], p_oth=p_oth[i], Jgen=Jgen)
+    best["eta"] = best["P"] / 1000 * 100
+    best["Rs_eff"] = Rs_eff
+    return best
+
+
+def psk_evaluate(Tin, Apar, Rs):
+    """Module efficiency (aperture) with optimised stripe width W."""
+    p = PSK
+    J0 = J0_of(p)
+    Jgen = jph(Tin * PSK_ABS)
+    Voc, Vmp, Jmp, Pmp = diode_mpp(Jgen, J0, p["n_id"])
+    p_oth = p["r_other"] * 1e-4 * Jmp / Vmp
+    W = np.linspace(1e-3, 25e-3, 481)                  # stripe widths to try (m)
+    p_lat = Rs * Jmp * W**2 / (3 * Vmp)                # current crosses the whole stripe
+    gff = W / (W + p["dead"])                          # fraction of the area that makes power
+    P = Pmp * gff * (1 - p_lat - p_oth)
+    i = int(np.argmax(P))
+    best = dict(P=P[i], W=W[i], gff=gff[i], p_lat=p_lat[i], p_oth=p_oth,
+                Jsc=Jgen, Voc=Voc, Pmp0=Pmp, Jgen=Jgen)
+    best["eta"] = best["P"] / 1000 * 100
+    return best
+
+
+# ------------------------------------------------------------------ electrode families
+def tco_family(name, overrides=None):
+    """Return (optics(arch, t), Rs(t)) for a TCO with optional parameter
+    overrides (for Monte Carlo)."""
+    d = dict(el.TCOS[name]); d.update(overrides or {})
+    kw = {k: d[k] for k in ("m0_scale", "eps_scale", "Eg_shift") if k in d}
+    N = el.oxide_index(LAM, d["host"], d["n"], d["mu"], **kw)
+    rho = el.oxide_resistivity(d["n"], d["mu"])
+
+    def optics(arch, t):
+        f = shj_optics_film if arch == "SHJ" else psk_optics_film
+        return f([N], [t])
+
+    def Rs(t):
+        return rho / (t * 1e-9)
+    return optics, Rs, N
+
+
+def dmd_family(A_size=1.0, tAg_min=7.0, d_diel=None):
+    """ZnO/Ag/ZnO. design variable x = (d1, dAg, d2)."""
+    Nz = el.oxide_index(LAM, "ZnO", 0.0, 1.0)
+
+    def optics(arch, x):
+        d1, dAg, d2 = x
+        Nag = np.sqrt(ph.ag_eps(ph.eV_from_nm(LAM), dAg, A_size))
+        f = shj_optics_film if arch == "SHJ" else psk_optics_film
+        # light enters through outer layer; ordering from incidence side
+        return f([Nz, Nag, Nz], [d1, dAg, d2])
+
+    def Rs(x):
+        return ph.ag_resistivity(x[1], A_size) / (x[1] * 1e-9)
+    return optics, Rs
+
+
+def graphene_family(EF=0.45, mu=3000.0, beta=1.0, arch_ar=True):
+    Ng = np.sqrt(ph.graphene_eps(ph.eV_from_nm(LAM), EF, mu))
+    Rs1, n2d = ph.graphene_sheet_resistance(EF, mu)
+
+    def optics(arch, N):
+        N = int(N)
+        if arch == "SHJ":
+            # dielectric AR cap on top, graphene in contact with the cell
+            films = [np.full_like(LAM, AR_INDEX, dtype=complex)] + [Ng] * N
+            dl = [shj_optics_ar_only()[2]] + [ph.GRAPHENE_D * 1e9] * N
+            return shj_optics_film(films, dl)
+        return psk_optics_film([Ng] * N, [ph.GRAPHENE_D * 1e9] * N)
+
+    def Rs(N):
+        return Rs1 / N**beta
+    return optics, Rs
+
+
+def network_family(name, ratio=None):
+    r = ratio if ratio is not None else el.NETWORKS[name]["ratio"]
+
+    def optics(arch, Rs):
+        Te = el.network_T(Rs, r)
+        if arch == "SHJ":
+            Tin = shj_optics_ar_only()[1] * Te
+        else:
+            Tin = psk_optics_bare() * Te
+        return Tin, (1 - Te) * np.ones_like(LAM)
+
+    def Rsf(Rs):
+        return Rs
+    return optics, Rsf
+
+
+# ------------------------------------------------------------------ optimisers
+T_GRID = np.concatenate([np.arange(20, 200, 5.0), np.arange(200, 1001, 20.0)])
+RS_GRID = np.logspace(0, 3.6, 73)
+
+
+def optimise(arch, kind, fam, junction="front", grid=None, keep_curve=False):
+    """Scan the design variable and return the best design (and curve)."""
+    optics, Rs = fam[0], fam[1]
+    if kind == "tco":
+        xs = grid if grid is not None else T_GRID
+    elif kind == "graphene":
+        xs = np.arange(1, 9)
+    elif kind == "network":
+        xs = RS_GRID
+    elif kind == "dmd":
+        xs = grid
+    curve = []
+    best = None
+    for x in xs:
+        Tin, Apar = optics(arch, x)
+        R = Rs(x)
+        res = shj_evaluate(Tin, Apar, R, junction) if arch == "SHJ" else psk_evaluate(Tin, Apar, R)
+        res["x"] = x
+        res["Rs"] = R
+        absorb = SI_LL if arch == "SHJ" else PSK_ABS
+        res["J_par"] = jph(Apar * absorb) / 10      # mA/cm^2 lost to parasitic absorption
+        res["J_in"] = jph(Tin * absorb) / 10
+        if keep_curve:
+            curve.append(res)
+        if best is None or res["eta"] > best["eta"]:
+            best = res
+    return (best, curve) if keep_curve else best
+
+
+def dmd_grid(coarse=False):
+    if coarse:
+        d = np.arange(20, 81, 10.0); a = np.arange(7, 17, 2.0)
+    else:
+        d = np.arange(10, 91, 5.0); a = np.arange(7, 18.1, 1.0)
+    return [(d1, ag, d2) for d1 in d for ag in a for d2 in d]
+
+
+def ideal_reference(arch):
+    """Lossless, zero-resistance 'perfect electrode' reference: the best AR
+    situation without the electrode (SHJ: ideal AR; PSK: index matching) and
+    Rs -> 0."""
+    if arch == "SHJ":
+        Tin = shj_optics_ar_only()[1]
+        return shj_evaluate(Tin, 0 * Tin, 1e-6)
+    Tin = psk_optics_ideal()[1]
+    return psk_evaluate(Tin, 0 * Tin, 1e-6)
