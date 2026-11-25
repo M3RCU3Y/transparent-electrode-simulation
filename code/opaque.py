@@ -1,16 +1,7 @@
-"""
-opaque.py -- transparent versus non-transparent front contacts (report Section 4.9).
+# opaque front contact comparison (report section 4.9)
+# compares silver films, thick/heavily doped ito, and bare metal grids
+# outputs ../data/opaque_ag.csv and ../data/numbers_opaque.tex
 
-Uses exactly the same optics and device models as run_all.py to compare the
-transparent electrodes with three kinds of non-transparent contact:
-
-  1. a continuous silver film, thickened from see-through to opaque;
-  2. an oxide made opaque, either by making it thick or by doping it heavily;
-  3. an opaque metal grid with no transparent conductor underneath.
-
-Writes ../data/opaque_ag.csv and ../data/numbers_opaque.tex.
-Run from Report/code with   python opaque.py   (about a second; no random numbers).
-"""
 import os
 
 import numpy as np
@@ -22,50 +13,46 @@ import tmm
 import device as dv
 
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data")
-LAMW = np.arange(300.0, 2501.0, 5.0)     # wavelengths for the film-on-glass spectra (nm)
+LAMW = np.arange(300.0, 2501.0, 5.0)     # spectrum grid nm
 GLASS = 1.52
-NUM = {}                                 # name -> value, written to numbers_opaque.tex
+NUM = {}                                 # latex macros
 
 
 def macro(name, value, fmt="{:.2f}"):
-    """Store a number for the report; it becomes the LaTeX command \\<name>."""
     NUM[name] = fmt.format(value)
 
 
 def save(name, header, cols):
-    """Write columns to ../data/<name> as a CSV file with a header row."""
     np.savetxt(os.path.join(OUT, name), np.column_stack(cols), delimiter=",",
                header=",".join(header), comments="", fmt="%.6g")
 
 
 def T_sol(lam, T, lo=300, hi=1200):
-    """Solar-photon-weighted average of T over lo-hi nm (same as in run_all.py)."""
+    """solar photon weighted average of T between lo and hi nm"""
     m = (lam >= lo) & (lam <= hi)
     F = ph.photon_flux(lam[m], ph.am15g(lam[m]))
     return trapezoid(F * T[m], lam[m]) / trapezoid(F, lam[m])
 
 
-T_GLASS = tmm.film_on_thick_substrate([], [], GLASS, LAMW)[1]    # bare glass, for normalising
+T_GLASS = tmm.film_on_thick_substrate([], [], GLASS, LAMW)[1]    # bare glass baseline
 
 
 def device_eta(optics_shj, optics_psk, Rs):
-    """Efficiency (%) of both devices with one front contact, after optimising
-    the finger spacing and stripe width. Returns (eta_SHJ, eta_PSK, details...)."""
+    """evaluate both devices for one contact and clamp eta at 0"""
     shj = dv.shj_evaluate(*optics_shj, Rs)
     psk = dv.psk_evaluate(*optics_psk, Rs)
     return max(shj["eta"], 0.0), max(psk["eta"], 0.0), shj, psk
 
 
-# --------------------------------------------------------------------------- 1. silver films
+# 1. silver films from 7 nm to 120 nm
 def silver_films():
-    """Thicken a silver film from 7 nm (the thinnest continuous film) to 120 nm."""
     thicknesses = np.array([7, 8, 9, 10, 12, 14, 16, 18, 20,
                             25, 30, 35, 40, 50, 60, 80, 100, 120], float)
     rows = []
     for t in thicknesses:
-        n_wide = np.sqrt(ph.ag_eps(ph.eV_from_nm(LAMW), t))     # for the film on glass
+        n_wide = np.sqrt(ph.ag_eps(ph.eV_from_nm(LAMW), t))     # glass spectrum
         R, T, A = tmm.film_on_thick_substrate([n_wide], [t], GLASS, LAMW)
-        n_dev = np.sqrt(ph.ag_eps(ph.eV_from_nm(dv.LAM), t))    # for the devices
+        n_dev = np.sqrt(ph.ag_eps(ph.eV_from_nm(dv.LAM), t))    # device grid
         Rs = ph.ag_resistivity(t) / (t * 1e-9)
         eta_shj, eta_psk, _, _ = device_eta(dv.shj_optics_film([n_dev], [t]),
                                             dv.psk_optics_film([n_dev], [t]), Rs)
@@ -74,7 +61,7 @@ def silver_films():
     rows = np.array(rows)
     save("opaque_ag.csv", ["t", "Rs", "Tsol", "Rsol", "Asol", "etaSHJ", "etaPSK"], rows.T)
 
-    # numbers quoted in the text, for a few thicknesses
+    # save key thicknesses for report text
     for t, key in [(7, "Seven"), (10, "Ten"), (20, "Twenty"), (50, "Fifty"), (100, "Hundred")]:
         r = rows[thicknesses == t][0]
         macro(f"agRs{key}", r[1], "{:.2f}" if r[1] < 1 else "{:.1f}")
@@ -91,9 +78,9 @@ def silver_films():
     return rows
 
 
-# --------------------------------------------------------------------------- 2. opaque oxides
+# 2. thick and heavily doped ito
 def thick_ito():
-    """ITO made 1 and 3 micrometres thick: very conductive, but much darker."""
+    """1 um and 3 um ito films"""
     d = el.TCOS["ITO"]
     rho = el.oxide_resistivity(d["n"], d["mu"])
     optics, _, _ = dv.tco_family("ITO")
@@ -108,15 +95,14 @@ def thick_ito():
 
 
 def doped_ito():
-    """How heavily indium oxide must be doped before its plasma edge reaches
-    the light that silicon uses (1107 nm), or the visible (750 nm)."""
+    """carrier density needed to push plasma edge to 1107 nm (Si) or 750 nm (vis)"""
     hp = el.HOSTS["In2O3"]
 
     def plasma_wavelength(n):
         return ph.screened_plasma_wavelength(n, ph.effective_mass(n, hp["m0"], hp["C"]), hp["eps_vis"])
 
     def density_for(lam_target):
-        # bisection on a log scale; the plasma wavelength falls steadily as n rises
+        # log bisection since plasma wavelength drops as n increases
         lo, hi = 1e20, 1e23
         for _ in range(80):
             mid = np.sqrt(lo * hi)
@@ -128,14 +114,10 @@ def doped_ito():
     macro("nPlasmaVisFactor", density_for(750) / el.TCOS["ITO"]["n"], "{:.0f}")
 
 
-# --------------------------------------------------------------------------- 3. bare metal grid
+# 3. bare metal grid with no transparent electrode
 def bare_grid():
-    """A metal grid with no transparent conductor at all.
-
-    Silicon cell: give it an ideal, lossless anti-reflection coating; the only
-    sideways path to the fingers is then the wafer itself (rear junction).
-    The 1e12 ohm/sq stands for 'no electrode'. Module: there is no sideways
-    path at all, so it makes no power."""
+    """use 1e12 ohm/sq to represent no tco layer
+    in rear junction shj the wafer still conducts laterally"""
     Tin_ar = dv.shj_optics_ar_only()[1]
     g_rear = dv.shj_evaluate(Tin_ar, 0 * Tin_ar, 1e12, junction="rear")
     g_front = dv.shj_evaluate(Tin_ar, 0 * Tin_ar, 1e12, junction="front")
@@ -150,7 +132,7 @@ def bare_grid():
 
 def write_numbers():
     with open(os.path.join(OUT, "numbers_opaque.tex"), "w", encoding="utf-8") as f:
-        f.write("% generated by opaque.py -- do not edit\n")
+        f.write("% generated by opaque.py\n")
         for k in sorted(NUM):
             f.write(f"\\newcommand{{\\{k}}}{{{NUM[k]}}}\n")
 

@@ -1,107 +1,86 @@
-"""
-physics.py -- the physical models behind the transparent-electrode comparison.
+# physics models for the transparent electrode project
+# brandon deonarine, phys 3153, uwi st augustine 2026
+# units: eV, nm, 1/cm3 for n, cm2/Vs for mobility, SI for everything else
 
-Brandon Deonarine, PHYS 3153 (UWI St. Augustine), 2026.
-
-What is in here, roughly in the order the report uses it:
-
-  * physical constants
-  * the free electrons of a heavily doped oxide (degenerate, non-parabolic band)
-  * the optical band gap: Burstein-Moss shift minus band-gap renormalisation
-  * the interband background permittivity (Tauc-Lorentz, real part by Kramers-Kronig)
-  * the Drude model of the free electrons
-  * mobility limits: ionised impurities, lattice, grain boundaries
-  * optical models for silver and for graphene
-  * the AM1.5G solar spectrum
-
-Units: energies in eV, wavelengths in nm, carrier densities in cm^-3 and
-mobilities in cm^2/Vs (the units papers use). Everything else is SI.
-"""
 import os
 
 import numpy as np
 from numpy import trapezoid
 
-# --------------------------------------------------------------------------- constants
-q = 1.602176634e-19        # elementary charge, C
-me = 9.1093837015e-31      # electron mass, kg
+# constants
+q = 1.602176634e-19        # electron charge C
+me = 9.1093837015e-31      # electron mass kg
 hbar = 1.054571817e-34     # J s
 h = 6.62607015e-34         # J s
-c0 = 2.99792458e8          # speed of light, m/s
+c0 = 2.99792458e8          # speed of light m/s
 eps0 = 8.8541878128e-12    # F/m
 kB = 1.380649e-23          # J/K
-Z0 = 376.730313668         # impedance of free space, ohm
+Z0 = 376.730313668         # free space impedance ohm
 TEMP = 300.0               # K
 kT_eV = kB * TEMP / q
-HC_EVNM = 1239.841984      # hc in eV nm, so E(eV) = HC_EVNM / lambda(nm)
+HC_EVNM = 1239.841984      # hc in eV nm
 
 
 def eV_from_nm(lam_nm):
-    """Photon energy (eV) for a wavelength (nm)."""
+    # wavelength in nm to photon energy in eV
     return HC_EVNM / np.asarray(lam_nm, dtype=float)
 
 
-# --------------------------------------------------------------------------- free electrons
-# In these oxides the conduction band is not a perfect parabola. A common way
-# to describe that is   E (1 + C E) = hbar^2 k^2 / (2 m0*),
-# where m0* is the effective mass at the band bottom and C the non-parabolicity.
+# free electrons in a non parabolic band
+# dispersion E(1 + C*E) = hbar^2 k^2 / (2 m0*)
 
 def fermi_wavevector(n_cm3):
-    """Fermi wavevector k_F (1/m) of a degenerate electron gas."""
+    """fermi wavevector kF in 1/m"""
     n = np.asarray(n_cm3, dtype=float) * 1e6
     return (3 * np.pi**2 * n) ** (1 / 3)
 
 
 def fermi_energy(n_cm3, m0, C):
-    """Fermi energy above the conduction-band minimum (eV)."""
+    """fermi energy above conduction band bottom in eV"""
     kF = fermi_wavevector(n_cm3)
-    Ek = (hbar * kF) ** 2 / (2 * m0 * me) / q    # what a parabolic band would give, eV
+    Ek = (hbar * kF) ** 2 / (2 * m0 * me) / q    # parabolic value in eV
     if C == 0:
         return Ek
-    # solve E (1 + C E) = Ek for E
+    # quadratic root for E(1 + C*E) = Ek
     return (-1 + np.sqrt(1 + 4 * C * Ek)) / (2 * C)
 
 
 def effective_mass(n_cm3, m0, C):
-    """Effective mass at the Fermi level, in units of the electron mass.
-    It grows as the band fills, which is why heavily doped ITO is 'heavier'."""
+    """effective mass at fermi level in units of me"""
     return m0 * (1 + 2 * C * fermi_energy(n_cm3, m0, C))
 
 
-# --------------------------------------------------------------------------- optical gap
+# optical band gap
 def bgn(n_cm3, eps_s, m0, C):
-    """Band-gap renormalisation (eV), the narrowing of the gap caused by the
-    electrons interacting with each other (exchange) and with the donor ions.
-    Follows the form used by Hamberg and Granqvist."""
+    """band gap narrowing in eV from electron electron and electron ion terms
+    uses hamberg and granqvist form"""
     n = np.asarray(n_cm3, float) * 1e6
     eps = eps0 * eps_s
     kF = fermi_wavevector(n_cm3)
     mstar = effective_mass(n_cm3, m0, C) * me
     EF_par = (hbar * kF) ** 2 / (2 * mstar)                  # J
-    kTF = np.sqrt(3 * n * q**2 / (2 * eps * EF_par))         # Thomas-Fermi screening wavevector
+    kTF = np.sqrt(3 * n * q**2 / (2 * eps * EF_par))         # thomas fermi screening wavevector
     dE_ee = (q**2 * kF / (2 * np.pi**2 * eps)
              + q**2 * kTF / (8 * np.pi * eps) * (1 - 4 / np.pi * np.arctan(kF / kTF)))
-    aB = 4 * np.pi * eps * hbar**2 / (mstar * q**2)          # effective Bohr radius
+    aB = 4 * np.pi * eps * hbar**2 / (mstar * q**2)          # effective bohr radius
     dE_ei = n * q**2 / (eps * aB * kTF**3)
     return (dE_ee + dE_ei) / q
 
 
 def optical_gap(n_cm3, mat):
-    """Optical gap (eV): the undoped gap, pushed up by the filled states
-    (Burstein-Moss), pulled down a little by renormalisation."""
+    """optical gap in eV with burstein moss shift minus bgn"""
     EF = fermi_energy(n_cm3, mat["m0"], mat["C"])
     kF = fermi_wavevector(n_cm3)
     valence = 0.0
     if mat.get("mv", np.inf) != np.inf:
-        # a curved valence band adds its own share of the shift (ZnO)
+        # valence band curvature contribution for ZnO
         valence = (hbar * kF) ** 2 / (2 * mat["mv"] * me) / q
     return mat["Eg0"] + EF + valence - bgn(n_cm3, mat["eps_s"], mat["m0"], mat["C"])
 
 
-# --------------------------------------------------------------------------- interband background
+# interband background (tauc lorentz)
 def tl_eps2(E, A, E0, Cb, Eg):
-    """Imaginary permittivity of the Tauc-Lorentz model: zero below the gap Eg,
-    a broadened absorption peak (centre E0, width Cb) above it."""
+    """imaginary part of tauc lorentz permittivity"""
     E = np.asarray(E, float)
     out = np.zeros_like(E)
     above = E > Eg
@@ -110,14 +89,13 @@ def tl_eps2(E, A, E0, Cb, Eg):
     return out
 
 
-# integration grid for Kramers-Kronig: fine up to 12 eV, coarser out to 80 eV
+# grid for kramers kronig integral, finer up to 12 eV then coarser to 80 eV
 _XI = np.concatenate([np.linspace(0.0, 12.0, 9001)[1:], np.linspace(12.0, 80.0, 2001)[1:]])
 
 
 def tl_eps1(E, A, E0, Cb, Eg, eps_off):
-    """Real permittivity from tl_eps2 by a numerical Kramers-Kronig integral.
-    The singular point is handled by subtracting it out and adding back its
-    principal value analytically."""
+    """real part of tauc lorentz from numerical kramers kronig
+    subtracts singularity and adds analytic principal value back"""
     E = np.atleast_1d(np.asarray(E, float))
     xi = np.concatenate([[Eg], _XI[_XI > Eg]])
     e2xi = tl_eps2(xi, A, E0, Cb, Eg)
@@ -129,7 +107,7 @@ def tl_eps1(E, A, E0, Cb, Eg, eps_off):
         den = xi**2 - Ei**2
         with np.errstate(divide="ignore", invalid="ignore"):
             f = np.where(np.abs(den) > 1e-12, num / den, 0.0)
-        # principal value of  Ei*e2E / (xi^2 - Ei^2)  over [a, b], done by hand
+        # analytic principal value term on [a, b]
         if e2E != 0.0:
             pv = (1 / (2 * Ei)) * np.log(abs((b - Ei) * (a + Ei) / ((b + Ei) * (a - Ei))))
         else:
@@ -139,39 +117,35 @@ def tl_eps1(E, A, E0, Cb, Eg, eps_off):
 
 
 def tl_eps(E, A, E0, Cb, Eg, eps_off):
-    """Complex Tauc-Lorentz permittivity."""
     return tl_eps1(E, A, E0, Cb, Eg, eps_off) + 1j * tl_eps2(E, A, E0, Cb, Eg)
 
 
-TL_OFFSET = 2.0   # eps_1 at very high energy
+TL_OFFSET = 2.0   # high energy eps1 offset
 
 
 def calibrate_tl(mat, Eg, target_eps_vis):
-    """Pick the Tauc-Lorentz amplitude A so the background gives the known
-    visible permittivity of the undoped oxide, eps_1(2.25 eV) = target_eps_vis
-    (a refractive index of about 1.9-2.0). eps_1 is linear in A, so a single
-    evaluation is enough."""
+    """set TL amplitude A so eps1(2.25 eV) matches target visible permittivity"""
     E0, Cb = Eg + mat["TL_dE0"], mat["TL_C"]
     e1_unit = tl_eps1(np.array([2.25]), 1.0, E0, Cb, Eg, 0.0)[0]
     A = (target_eps_vis - TL_OFFSET) / e1_unit
     return A, E0, Cb, TL_OFFSET
 
 
-# --------------------------------------------------------------------------- Drude model
+# drude free electron model
 def plasma_energy(n_cm3, mstar):
-    """Unscreened plasma energy hbar*omega_p (eV)."""
+    """unscreened plasma energy hbar*wp in eV"""
     n = np.asarray(n_cm3, float) * 1e6
     return hbar * np.sqrt(n * q**2 / (eps0 * mstar * me)) / q
 
 
 def drude_gamma(mu_cm2, mstar):
-    """Damping hbar*Gamma (eV), from the mobility: tau = m* mu / e."""
+    """drude damping hbar*Gamma in eV from tau = m* mu / q"""
     tau = mstar * me * (mu_cm2 * 1e-4) / q
     return hbar / tau / q
 
 
 def drude_eps(E, n_cm3, mu_cm2, mstar):
-    """Free-electron contribution to the permittivity at photon energy E (eV)."""
+    """drude permittivity at photon energy E in eV"""
     Ep = plasma_energy(n_cm3, mstar)
     G = drude_gamma(mu_cm2, mstar)
     E = np.asarray(E, float)
@@ -179,15 +153,14 @@ def drude_eps(E, n_cm3, mu_cm2, mstar):
 
 
 def screened_plasma_wavelength(n_cm3, mstar, eps_inf):
-    """Wavelength (nm) of the plasma edge, where the film starts to reflect."""
+    """screened plasma wavelength in nm"""
     return HC_EVNM / (plasma_energy(n_cm3, mstar) / np.sqrt(eps_inf))
 
 
-# --------------------------------------------------------------------------- mobility limits
+# mobility limits
 def mu_ionised_impurity(n_cm3, mat, Z=1.0, Ni_over_n=1.0):
-    """Mobility limit set by scattering from the donor ions (cm^2/Vs).
-    Brooks-Herring-Dingle for a degenerate gas, with the non-parabolic
-    correction in the form given by Pisarkiewicz et al. and Ellmer."""
+    """ionised impurity mobility limit in cm2/Vs
+    brooks herring dingle with non parabolic correction (pisarkiewicz / ellmer)"""
     n = np.asarray(n_cm3, float) * 1e6
     eps = eps0 * mat["eps_s"]
     mstar = effective_mass(n_cm3, mat["m0"], mat["C"])
@@ -201,68 +174,63 @@ def mu_ionised_impurity(n_cm3, mat, Z=1.0, Ni_over_n=1.0):
 
 
 def mu_grain_boundary(n_cm3, mat, Nt_cm2, L_nm):
-    """Grain-boundary mobility (cm^2/Vs) from Seto's model: electrons must
-    hop a barrier at each boundary between crystal grains of size L.
-    Returns (mobility, barrier height in eV). Valid while n*L > Nt."""
+    """seto grain boundary mobility in cm2/Vs and barrier height in eV"""
     n = np.asarray(n_cm3, float) * 1e6
     Nt = Nt_cm2 * 1e4
     L = L_nm * 1e-9
     eps = eps0 * mat["eps_s"]
     m = effective_mass(n_cm3, mat["m0"], mat["C"]) * me
-    phi_b = q**2 * Nt**2 / (8 * eps * n) / q            # barrier height, eV
-    mu0 = q * L / np.sqrt(2 * np.pi * m * kB * TEMP)    # m^2/Vs
+    phi_b = q**2 * Nt**2 / (8 * eps * n) / q            # barrier height eV
+    mu0 = q * L / np.sqrt(2 * np.pi * m * kB * TEMP)    # m2/Vs
     return mu0 * np.exp(-phi_b / kT_eV) * 1e4, phi_b
 
 
 def mu_total(n_cm3, mat, Nt_cm2=None, L_nm=None):
-    """Combined mobility limit (Matthiessen's rule: 1/mu = sum of 1/mu_i)."""
+    """total mobility using matthiessen rule"""
     inv = 1 / mu_ionised_impurity(n_cm3, mat) + 1 / mat["mu_L"]
     if Nt_cm2 is not None:
         inv = inv + 1 / mu_grain_boundary(n_cm3, mat, Nt_cm2, L_nm)[0]
     return 1 / inv
 
 
-# --------------------------------------------------------------------------- silver
-# Drude plus a constant background. In thin films the electrons also scatter
-# off the surfaces, so the damping grows roughly as hbar * v_F / thickness.
+# silver optical model
+# drude plus surface scattering term for thin films
 AG = dict(eps_inf=3.7, Ep=8.9, G_bulk=0.021, vF=1.39e6)
 
 
 def ag_gamma(t_nm, A_size=1.0):
-    """Damping (eV) of a silver film t_nm thick."""
+    """damping in eV for silver thickness t_nm"""
     return AG["G_bulk"] + A_size * hbar * AG["vF"] / (t_nm * 1e-9) / q
 
 
 def ag_eps(E, t_nm=np.inf, A_size=1.0):
-    """Permittivity of a silver film (bulk silver when t_nm is infinite)."""
+    """silver permittivity, bulk if t_nm is inf"""
     G = AG["G_bulk"] if np.isinf(t_nm) else ag_gamma(t_nm, A_size)
     E = np.asarray(E, float)
     return AG["eps_inf"] - AG["Ep"] ** 2 / (E**2 + 1j * G * E)
 
 
 def ag_resistivity(t_nm, A_size=1.0):
-    """DC resistivity (ohm m), from the same damping as the optics."""
+    """silver dc resistivity in ohm m from same damping"""
     G = ag_gamma(t_nm, A_size) * q / hbar        # 1/s
     wp = AG["Ep"] * q / hbar
     return G / (eps0 * wp**2)
 
 
-# --------------------------------------------------------------------------- graphene
-GRAPHENE_D = 0.335e-9    # layer spacing, used as the optical thickness of one layer (m)
-VF_G = 1.0e6             # Fermi velocity of graphene (m/s)
+# graphene
+GRAPHENE_D = 0.335e-9    # single layer thickness m
+VF_G = 1.0e6             # fermi velocity m/s
 
 
 def graphene_sigma(E, EF=0.45, mu_cm2=3000.0):
-    """Sheet conductivity (S) of doped graphene at photon energy E (eV),
-    from the Kubo formula: a Drude-like intraband part plus the interband
-    part that gives the famous 2.3 % absorption per layer."""
+    """sheet conductivity in S for doped graphene from kubo formula"""
     E = np.asarray(E, float)
     w = E * q / hbar
     tau = (mu_cm2 * 1e-4) * EF * q / (q * VF_G**2)
     D = q**2 * EF * q / (np.pi * hbar**2)
     s_intra = 1j * D / (w + 1j / tau)
     s0 = q**2 / (4 * hbar)
-    # smoothed step: transitions are blocked below 2 EF
+    # interband step blocked below 2 EF
     step = 0.5 + np.arctan((E - 2 * EF) / (2 * kT_eV)) / np.pi
     log_term = np.log((E + 2 * EF) ** 2 / ((E - 2 * EF) ** 2 + (2 * kT_eV) ** 2))
     s_inter = s0 * (step - 1j / (2 * np.pi) * log_term)
@@ -270,34 +238,32 @@ def graphene_sigma(E, EF=0.45, mu_cm2=3000.0):
 
 
 def graphene_eps(E, EF=0.45, mu_cm2=3000.0):
-    """Equivalent permittivity of one graphene layer GRAPHENE_D thick."""
+    """effective permittivity for one graphene layer"""
     E = np.asarray(E, float)
     w = E * q / hbar
     return 1.0 + 1j * graphene_sigma(E, EF, mu_cm2) / (eps0 * w * GRAPHENE_D)
 
 
 def graphene_sheet_resistance(EF=0.45, mu_cm2=3000.0):
-    """Sheet resistance (ohm/sq) of one layer, and its carrier density (cm^-2)."""
+    """returns (Rs in ohm/sq, 2d carrier density in 1/cm2)"""
     n2d = (EF * q / (hbar * VF_G)) ** 2 / np.pi
     return 1 / (n2d * q * mu_cm2 * 1e-4), n2d * 1e-4
 
 
-# --------------------------------------------------------------------------- solar spectrum
+# solar spectrum
 def planck_toa(lam_nm, T=5778.0):
-    """Black-body sunlight above the atmosphere (W m^-2 nm^-1)."""
+    """top of atmosphere blackbody spectrum in W/m2/nm"""
     lam = lam_nm * 1e-9
     B = 2 * np.pi * h * c0**2 / lam**5 / np.expm1(h * c0 / (lam * kB * T))
-    return B * (6.957e8 / 1.495978707e11) ** 2 * 1e-9    # (solar radius / 1 AU)^2
+    return B * (6.957e8 / 1.495978707e11) ** 2 * 1e-9    # (R_sun / 1 AU)^2
 
 
 def _gaussian_band(lam, centre, width, depth):
-    """One molecular absorption band of the atmosphere (optical depth)."""
     return depth * np.exp(-0.5 * ((lam - centre) / width) ** 2)
 
 
 def _clear_sky(lam, airmass, f_diffuse, T_eff):
-    """Unnormalised clear-sky irradiance: black-body sunlight minus Rayleigh
-    and aerosol scattering, ozone, and the main O2/H2O/CO2 absorption bands."""
+    """approximate clear sky spectrum with scattering and gas absorption bands"""
     um = lam / 1000
     E0 = planck_toa(lam, T_eff)
     tau_rayleigh = 0.008735 * um ** -4.08
@@ -315,8 +281,7 @@ def _clear_sky(lam, airmass, f_diffuse, T_eff):
 
 
 def am15g_approx(lam_nm, airmass=1.5, f_diffuse=0.30, T_eff=5600.0):
-    """A simple model of the AM1.5 global spectrum, scaled to 1000 W/m^2 over
-    280-4000 nm (W m^-2 nm^-1). Only used if the ASTM table is missing."""
+    """fallback am1.5g model scaled to 1000 W/m2 if astm csv is missing"""
     lam = np.asarray(lam_nm, float)
     G = _clear_sky(lam, airmass, f_diffuse, T_eff)
     lam_norm = np.linspace(280, 4000, 7441)
@@ -330,8 +295,7 @@ _G173 = None
 
 
 def _g173_table():
-    """The ASTM G173-03 reference spectrum (global tilt column), loaded once,
-    with its running integral for bin averaging."""
+    """load astm g173 global tilt spectrum once and keep cumulative integral"""
     global _G173
     if _G173 is None:
         d = np.loadtxt(G173_PATH, delimiter=",", skiprows=2)
@@ -346,11 +310,7 @@ def g173_available():
 
 
 def am15g(lam_nm):
-    """AM1.5 global spectrum on any wavelength grid (W m^-2 nm^-1).
-
-    Each grid point gets the average of the ASTM table over its own bin, so
-    the total power is right even on a coarse grid. Falls back to the
-    simple model above if the table is not there."""
+    """bin averaged am1.5g irradiance in W/m2/nm on lam_nm grid"""
     lam_nm = np.asarray(lam_nm, float)
     if not g173_available():
         return am15g_approx(lam_nm)
@@ -365,12 +325,11 @@ def am15g(lam_nm):
 
 
 def load_spectrum(lam_nm):
-    """Return (spectrum, name of its source)."""
     if g173_available():
         return am15g(lam_nm), "ASTM G173-03"
     return am15g_approx(lam_nm), "parametric AM1.5G approximation"
 
 
 def photon_flux(lam_nm, G):
-    """Photons per m^2 per s per nm, from irradiance G (W m^-2 nm^-1)."""
+    """photons per m2 per s per nm"""
     return G * (lam_nm * 1e-9) / (h * c0)

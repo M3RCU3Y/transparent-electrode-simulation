@@ -1,10 +1,8 @@
-"""Writes data/fallback.tex: placeholder macros used only when numbers.tex
-does not yet contain the Monte Carlo results (\\providecommand never
-overrides a real definition)."""
+# makes data/fallback.tex placeholders so latex compiles before monte carlo finishes
 import os
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "fallback.tex")
 names = ["ITO", "IOH", "AZO", "FTO", "DMD", "GRA", "AgNW", "PEDOT", "CNT"]
-lines = ["% fallbacks used only if numbers.tex lacks Monte Carlo results"]
+lines = ["% fallback placeholders if numbers.tex does not have monte carlo yet"]
 for a in ("SHJ", "PSK"):
     for n in names:
         for p in ("mc", "mclo", "mchi", "pfirst"):

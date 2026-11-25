@@ -1,16 +1,7 @@
-"""
-run_all.py -- runs every calculation in the report.
+# main script that runs all calculations for the report
+# writes csv files and numbers.tex / numbers.json into ../data/
+# run with python run_all.py (add quick flag for a short monte carlo test)
 
-Writes the data behind every figure to ../data/*.csv, and every number quoted
-in the text to ../data/numbers.tex, so the figures and the text always come
-from the same run.
-
-    python run_all.py            full run, about 10-15 minutes
-    python run_all.py --quick    the same, with a short Monte Carlo
-
-The parts below follow the order of the report: materials, films on glass,
-the design map, the two devices, the Monte Carlo test, and the checks.
-"""
 import json
 import os
 import sys
@@ -28,52 +19,43 @@ import sq
 QUICK = "--quick" in sys.argv
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data")
 os.makedirs(OUT, exist_ok=True)
-NUM = {}                                  # name -> value, written to numbers.tex
-SCALES = []                               # loss-breakdown scale factors (see summarise)
-RNG = np.random.default_rng(20261105)     # fixed seed, so every run gives the same numbers
+NUM = {}                                  # latex macros
+SCALES = []                               # loss breakdown scale factors
+RNG = np.random.default_rng(20261105)     # fixed seed for reproducibility
 
 
 def save(name, header, cols, fmt="%.6g"):
-    """Write columns to ../data/<name> as a CSV file with a header row."""
     arr = np.column_stack(cols)
     np.savetxt(os.path.join(OUT, name), arr, delimiter=",", header=",".join(header),
                comments="", fmt=fmt)
 
 
 def macro(name, value, fmt="{:.2f}"):
-    """Store a number for the report; it becomes the LaTeX command \\<name>."""
     NUM[name] = fmt.format(value) if not isinstance(value, str) else value
 
 
 def progress(msg):
-    """Progress message with the time."""
     print(f"[{time.strftime('%H:%M:%S')}] {msg}", flush=True)
 
 
-LAMW = np.arange(300.0, 2501.0, 5.0)          # wide wavelength grid for spectra (nm)
-GLASS = 1.52                                  # refractive index of the glass
+LAMW = np.arange(300.0, 2501.0, 5.0)          # wide wavelength grid nm
+GLASS = 1.52                                  # glass index
 
 
 def T_sol(lam, T, lo=300, hi=1200):
-    """Average of T over lo-hi nm, weighted by the number of solar photons
-    at each wavelength (the 'solar-weighted' transmittance)."""
+    """solar photon weighted average of T from lo to hi nm"""
     m = (lam >= lo) & (lam <= hi)
     F = ph.photon_flux(lam[m], ph.am15g(lam[m]))
     return trapezoid(F * T[m], lam[m]) / trapezoid(F, lam[m])
 
 
 def glass_only(lam):
-    """Transmittance of bare glass, used to normalise the film spectra."""
     R, T, A = tmm.film_on_thick_substrate([], [], GLASS, lam)
     return T
 
 
-# =============================================================================
-# 1. materials: permittivity, band gap and mobility of each oxide
-# =============================================================================
+# 1. material properties: permittivity, band gap and mobility
 def part_materials():
-    """Permittivity, band gap, effective mass and mobility of the four oxides,
-    and how the gap and mobility change with carrier density."""
     progress("dielectric functions")
     for nm, d in el.TCOS.items():
         hp = el.HOSTS[d["host"]]
@@ -108,7 +90,7 @@ def part_materials():
         mstar = ph.effective_mass(n_grid, hp["m0"], hp["C"])
         mii = ph.mu_ionised_impurity(n_grid, hp)
         mL = np.full_like(n_grid, hp["mu_L"])
-        # two grain-boundary cases: 30 nm grains with 1e13 or 3e13 cm^-2 trap states
+        # grain boundary cases for 30 nm grains with 1e13 and 3e13 1/cm2 traps
         mgb1, phib1 = ph.mu_grain_boundary(n_grid, hp, 1e13, 30.0)
         mgb2, phib2 = ph.mu_grain_boundary(n_grid, hp, 3e13, 30.0)
         mt = ph.mu_total(n_grid, hp)
@@ -124,7 +106,7 @@ def part_materials():
               "mu_tot1", "mu_tot2", "rho_lim", "phib1", "phib2"],
              [n_grid, mii, mL, np.minimum(mgb1, 1e5), np.minimum(mgb2, 1e5), mt,
               mt1, mt2, rho_lim, phib1, phib2])
-    # the four films themselves, plotted as markers
+    # marker points for the four oxide films
     rows = []
     for nm, d in el.TCOS.items():
         rows.append([d["n"], d["mu"], el.oxide_resistivity(d["n"], d["mu"]) * 100])
@@ -134,25 +116,20 @@ def part_materials():
              [[d["n"]], [d["mu"]], [el.oxide_resistivity(d["n"], d["mu"]) * 100]])
 
 
-# =============================================================================
-# 2. films on glass: spectra, thickness, Haacke figure of merit, the T-Rs map
-# =============================================================================
+# 2. films on glass: spectra, haacke figure of merit, T vs Rs map
 def tco_on_glass(nm, t, lam=LAMW, d=None):
-    """R, T, A of oxide film nm, t nm thick, on glass."""
     d = d or el.TCOS[nm]
     N = el.oxide_index(lam, d["host"], d["n"], d["mu"])
     return tmm.film_on_thick_substrate([N], [t], GLASS, lam)
 
 
 def part_films():
-    """The oxides on glass: spectra at equal sheet resistance, the effect of
-    thickness, the Haacke figure of merit, and the T-Rs map of all nine."""
     progress("spectra at Rs = 10 ohm/sq")
     Tg = glass_only(LAMW)
     cols, head = [LAMW, Tg], ["lam", "Tglass"]
     for nm, d in el.TCOS.items():
         rho = el.oxide_resistivity(d["n"], d["mu"])
-        t = rho / 10 * 1e9                     # thickness for 10 ohm/sq, nm
+        t = rho / 10 * 1e9                     # thickness for 10 ohm/sq in nm
         R, T, A = tco_on_glass(nm, t)
         cols += [T, R, A]
         head += [f"T_{nm}", f"R_{nm}", f"A_{nm}"]
@@ -180,16 +157,16 @@ def part_films():
             Rs.append(rho / (t * 1e-9))
         Ts, Tv, As, Rs = map(np.array, (Ts, Tv, As, Rs))
         phi = Ts**10 / Rs
-        phiA = (1 - As) ** 10 / Rs            # the same, counting only absorption as loss
+        phiA = (1 - As) ** 10 / Rs            # absorption only haacke proxy
         save(f"thick_{nm}.csv", ["t", "Rs", "Tsol", "Tvis", "Asol", "phiH", "phiHA"],
              [ts, Rs, Ts, Tv, As, phi * 1e3, phiA * 1e3])
         j = np.argmax(phi)
         macro(f"toptTrans{nm}", ts[j], "{:.0f}")
         macro(f"phimaxTrans{nm}", phi[j] * 1e3, "{:.1f}")
         i = np.argmax(phiA)
-        # the analytic optimum t* = 1/(10 alpha), with alpha read off a 50 nm film
+        # beer lambert estimate t* = 1/(10 alpha) using alpha from 50 nm film
         k = np.argmin(abs(ts - 50))
-        alpha_eff = -np.log(1 - As[k]) / (ts[k] * 1e-7)       # cm^-1
+        alpha_eff = -np.log(1 - As[k]) / (ts[k] * 1e-7)       # 1/cm
         sigma = 1 / (rho * 100)                                # S/cm
         t_an = 1 / (10 * alpha_eff) * 1e7
         phi_an = sigma / (10 * np.e * alpha_eff)
@@ -208,7 +185,7 @@ def part_films():
         tt = np.geomspace(15, 3000, 70)
         Tl = [T_sol(LAMW, tmm.film_on_thick_substrate([N], [t], GLASS, LAMW)[1] / Tg) for t in tt]
         save(f"land_{nm}.csv", ["Rs", "T"], [rho / (tt * 1e-9), np.array(Tl)])
-    # thin silver, bare and between two 40 nm ZnO layers, 6 to 25 nm thick
+    # bare silver and ZnO/Ag/ZnO with 40 nm ZnO, silver 6 to 25 nm
     Nz = el.oxide_index(LAMW, "ZnO", 0.0, 1.0)
     ag = np.arange(6, 25.1, 1.0)
     T1, T2, R1 = [], [], []
@@ -220,7 +197,7 @@ def part_films():
         R1.append(ph.ag_resistivity(a) / (a * 1e-9))
     save("land_Ag.csv", ["Rs", "T", "tAg"], [R1, T1, ag])
     save("land_DMD.csv", ["Rs", "T", "tAg"], [R1, T2, ag])
-    # graphene
+    # graphene 1 to 8 layers
     Rs1, n2d = ph.graphene_sheet_resistance()
     Ng = np.sqrt(ph.graphene_eps(ph.eV_from_nm(LAMW)))
     Tgr = []
@@ -233,7 +210,7 @@ def part_films():
     for nm, d in el.NETWORKS.items():
         R = np.logspace(0, 3.7, 80)
         save(f"land_{nm}.csv", ["Rs", "T"], [R, el.network_T(R, d["ratio"])])
-    # lines of constant Haacke figure of merit, drawn on the T-Rs map
+    # constant haacke contour lines
     R = np.logspace(0, 3.7, 60)
     cols, head = [R], ["Rs"]
     for phi in [1e-4, 1e-3, 1e-2, 3e-2]:
@@ -266,7 +243,7 @@ def part_films():
     t_ag, t_zno = best[0], best[1]
     n_ag = np.sqrt(ph.ag_eps(ph.eV_from_nm(LAMW), t_ag))
     R, T, A = tmm.film_on_thick_substrate([Nz, n_ag, Nz], [t_zno, t_ag, t_zno], GLASS, LAMW)
-    # the ITO thickness with the same sheet resistance, for comparison
+    # matched sheet resistance ito for comparison
     Rs_dmd = ph.ag_resistivity(t_ag) / (t_ag * 1e-9)
     t_ito = el.oxide_resistivity(el.TCOS["ITO"]["n"], el.TCOS["ITO"]["mu"]) / Rs_dmd * 1e9
     Ri, Ti, Ai = tco_on_glass("ITO", t_ito)
@@ -274,12 +251,8 @@ def part_films():
     macro("dmdItoT", t_ito, "{:.0f}")
 
 
-# =============================================================================
-# 3. the design map: light absorbed at fixed Rs, for every (n, mu)
-# =============================================================================
+# 3. design map of absorption at 10 ohm/sq over (n, mu)
 def part_designmap():
-    """For every combination of n and mu, the light an indium-oxide film absorbs
-    at 10 ohm/sq (the design map), and the best n by Gordon's criterion."""
     progress("design map")
     lam = np.arange(300.0, 2001.0, 10.0)
     Tg = glass_only(lam)
@@ -291,23 +264,23 @@ def part_designmap():
         for n in ns:
             rho = el.oxide_resistivity(n, mu)
             t = rho / Rs_target * 1e9
-            if t > 5000:                       # unrealistically thick: leave blank
+            if t > 5000:                       # skip if over 5 um thick
                 rows.append([n, mu, t, np.nan, np.nan])
                 continue
             N = el.oxide_index(lam, "In2O3", n, mu)
             R, T, A = tmm.film_on_thick_substrate([N], [t], GLASS, lam)
             rows.append([n, mu, t, T_sol(lam, A) * 100, T_sol(lam, T / Tg) * 100])
     rows = np.array(rows)
-    # cap the absorbed light at 30 % (and fill the blanks) so the colour scale stays readable
+    # clip absorption at 30% for colourmap
     rows[:, 3] = np.where(np.isnan(rows[:, 3]), 30.0, np.minimum(rows[:, 3], 30.0))
     np.savetxt(os.path.join(OUT, "designmap.csv"), rows, delimiter=",",
                header="n,mu,t,Asol,Tsol", comments="", fmt="%.5g")
     hp = el.HOSTS["In2O3"]
     n_grid = np.logspace(np.log10(5e19), np.log10(2e21), 80)
-    # the mobility limit, and a 'realistic' film at 60 % of it
+    # intrinsic mobility limit and 60% realistic bound
     save("designmap_limit.csv", ["n", "mu_lim", "mu_real"],
          [n_grid, ph.mu_total(n_grid, hp), 0.6 * ph.mu_total(n_grid, hp)])
-    # iso-thickness lines t = 1/(n e mu Rs): mu = 1/(n e Rs t)
+    # constant thickness lines mu = 1/(n q Rs t)
     cols, head = [n_grid], ["n"]
     for t in [100, 300, 1000]:
         cols.append(1 / (n_grid * 1e6 * ph.q * Rs_target * t * 1e-9) * 1e4)
@@ -336,7 +309,7 @@ def part_designmap():
                 res.append(best * 1e3)
             mstar = ph.effective_mass(n, hp["m0"], hp["C"])
             mu = ph.mu_total(n, hp)
-            # Gordon's figure: sigma/alpha goes as (mu m*)^2, normalised below
+            # gordon metric scales as (mu m*)^2
             gordon = (mu * 1e-4) ** 2 * (mstar * ph.me) ** 2
             out.append([n, res[0], res[1], gordon])
         out = np.array(out)
@@ -346,17 +319,14 @@ def part_designmap():
         macro("nopt" + {"In2O3": "InO", "ZnO": "ZnO"}[host], out[i, 0] / 1e20, "{:.1f}")
 
 
-# =============================================================================
-# 4. the two devices
-# =============================================================================
+# 4. device simulations
 def part_grid():
-    """Loss against finger spacing (silicon cell) and stripe width (module),
-    for a few sheet resistances: the curves behind Figs 4.5 and 4.7."""
+    """grid and stripe loss curves for figs 4.5 and 4.7"""
     progress("grid / module loss curves")
     p = dv.SHJ
     J0 = dv.J0_of(p)
-    s = np.linspace(0.4e-3, 5e-3, 150)       # finger spacing (m)
-    Jgen = 400.0                             # 40 mA/cm^2, in A/m^2
+    s = np.linspace(0.4e-3, 5e-3, 150)       # finger spacing m
+    Jgen = 400.0                             # 40 mA/cm2 in A/m2
     cols, head = [s * 1e3], ["s"]
     shade = p["w_f"] / s + p["busbar_shade"]
     Voc, Vmp, Jmp, Pmp = dv.diode_mpp_vec(Jgen * (1 - shade), J0, p["n_id"])
@@ -375,14 +345,14 @@ def part_grid():
         plat = Rs * Jmp * s**2 / (12 * Vmp)
         tot = 1 - (1 - shade) * (1 - plat - pfin)
         s_best.append(s[np.argmin(tot)] * 1e3)
-        # the cube-root law for the best spacing, for comparison
+        # analytic cube root spacing estimate
         s_cube_root.append((6 * Vmp.mean() * p["w_f"] / (Rs * Jmp.mean())) ** (1 / 3) * 1e3)
     save("sopt.csv", ["Rs", "s_num", "s_an"], [Rss, s_best, s_cube_root])
 
     psk = dv.PSK
     J0 = dv.J0_of(psk)
-    Voc, Vmp, Jmp, Pmp = dv.diode_mpp(230.0, J0, psk["n_id"])   # 23 mA/cm^2
-    W = np.linspace(1e-3, 20e-3, 200)        # stripe width (m)
+    Voc, Vmp, Jmp, Pmp = dv.diode_mpp(230.0, J0, psk["n_id"])   # 23 mA/cm2
+    W = np.linspace(1e-3, 20e-3, 200)        # stripe width m
     cols, head = [W * 1e3], ["W"]
     dead = 1 - W / (W + psk["dead"])
     cols.append(dead * 100)
@@ -404,12 +374,8 @@ def part_grid():
 
 
 def summarise(arch, b, ref):
-    """Split an electrode's efficiency deficit against the ideal electrode
-    into four parts (percentage points): light absorbed in the electrode,
-    extra reflection, shading or dead area, and resistance.
-
-    The four estimates are scaled together so they add up to the simulated
-    deficit; the scale factors are kept in SCALES and quoted in the report."""
+    """split efficiency loss into parasitic absorption, reflection, shading/dead area, resistance
+    scaled so the 4 parts sum to the total deficit"""
     eta_i = ref["eta"]
     J_i = ref["Jgen"] / 10
     J_in = b["J_in"]
@@ -429,7 +395,7 @@ def summarise(arch, b, ref):
 
 
 def part_devices():
-    """Optimise all nine electrodes in both devices with the baseline inputs."""
+    """optimise all 9 electrodes in shj and psk"""
     progress("device optimisation (baseline)")
     results = {}
     for arch in ["SHJ", "PSK"]:
@@ -452,7 +418,7 @@ def part_devices():
         for nm in el.NETWORKS:
             res[nm] = dv.optimise(arch, "network", dv.network_family(nm))
         results[arch] = res
-        # efficiency against thickness for the four oxides
+        # eta vs thickness curves for the 4 oxides
         cols, head = [dv.T_GRID], ["t"]
         for nm in el.TCOS:
             cols += [[c["eta"] for c in curves[nm]], [c["J_in"] for c in curves[nm]],
@@ -462,7 +428,7 @@ def part_devices():
                 cols.append([c["eta"] for c in curves[nm + "rear"]])
                 head.append(f"etarear_{nm}")
         save(f"eta_vs_t_{arch}.csv", head, cols)
-        # final table and loss breakdown
+        # summary table and loss breakdown
         rows = []
         for i, nm in enumerate(el.ORDER):
             b = res[nm]
@@ -497,8 +463,7 @@ def part_devices():
 
 
 def part_nscan():
-    """Best carrier density for an indium-oxide electrode in each device,
-    with mobility at its limit and at 60 % of it."""
+    """scan carrier density for In2O3 in both devices at full and 60% mobility limit"""
     progress("carrier-density scan of In2O3-based electrode in both devices")
     hp = el.HOSTS["In2O3"]
     n_grid = np.logspace(np.log10(5e19), np.log10(2e21), 22)
@@ -525,16 +490,13 @@ def part_nscan():
         macro(f"Rsnbest{name}", rows[i, col + 2], "{:.0f}")
 
 
-# =============================================================================
-# 5. Monte Carlo: does the ranking survive uncertain inputs?
-# =============================================================================
+# 5. monte carlo sensitivity runs
 def lognorm(mu, s):
-    """A random value scattered around mu by a factor of about exp(s)."""
     return mu * np.exp(RNG.normal(0, s))
 
 
 def sample_family(nm):
-    """Electrode nm with randomly varied inputs (ranges in report Table 3.4)."""
+    """draw random input parameters for electrode nm (table 3.4)"""
     if nm in el.TCOS:
         d = el.TCOS[nm]
         ov = dict(n=lognorm(d["n"], 0.15), mu=lognorm(d["mu"], 0.20),
@@ -553,10 +515,9 @@ def sample_family(nm):
 
 
 def part_montecarlo(Nmc):
-    """Repeat the whole optimisation Nmc times with random inputs, and record
-    the spread of efficiencies and how often each electrode ranks first."""
+    """run Nmc random input trials per device and track rank probabilities"""
     progress(f"Monte Carlo, N = {Nmc}")
-    # coarser design grids than the baseline, to keep the run time sensible
+    # slightly coarser grids to keep runtime manageable
     T_MC = np.concatenate([np.arange(20, 200, 10.0), np.arange(200, 1001, 40.0)])
     dmd_coarse = [(d1, a, d2)
                   for d1 in (30, 40, 50, 60)
@@ -570,7 +531,7 @@ def part_montecarlo(Nmc):
                 if kind == "tco":
                     b = dv.optimise(arch, kind, fam, grid=T_MC)
                 elif kind == "dmd":
-                    tmin = RNG.uniform(6, 9)           # thinnest silver that is still continuous
+                    tmin = RNG.uniform(6, 9)           # min continuous silver thickness
                     g = [x for x in dmd_coarse if x[1] >= tmin] or dmd_coarse
                     b = dv.optimise(arch, kind, fam, grid=g)
                 else:
@@ -583,7 +544,7 @@ def part_montecarlo(Nmc):
         q = np.percentile(E, [5, 25, 50, 75, 95], axis=0)
         save(f"mc_{arch}.csv", ["i", "p5", "p25", "p50", "p75", "p95", "mean"],
              [np.arange(len(el.ORDER)), q[0], q[1], q[2], q[3], q[4], E.mean(0)], fmt="%.4f")
-        ranks = np.argsort(np.argsort(-E, axis=1), axis=1)     # rank in each trial, 0 = best
+        ranks = np.argsort(np.argsort(-E, axis=1), axis=1)     # 0 = first place
         P = np.zeros((len(el.ORDER), len(el.ORDER)))
         for j in range(len(el.ORDER)):
             for r in range(len(el.ORDER)):
@@ -599,15 +560,12 @@ def part_montecarlo(Nmc):
     macro("Nmc", Nmc, "{:d}")
 
 
-# =============================================================================
-# 6. checks against known results, and the solar spectrum
-# =============================================================================
+# 6. validation checks and spectrum test
 def part_validation():
-    """Each part of the model against something known (report Table 3.5)."""
+    """benchmark checks against known results (report table 3.5)"""
     progress("validation")
     lam = np.arange(300.0, 1201.0, 5.0)
-    # (a) optics: an ideal quarter-wave coating reflects nothing at its design
-    #     wavelength, and a lossless stack must have R + T = 1 at every angle
+    # quarter wave AR check and lossless energy conservation R + T = 1
     n1 = np.sqrt(1.52)
     d = 550 / (4 * n1)
     R, T = tmm.unpolarised([1.0, n1, 1.52], [np.inf, d, np.inf], 0.0, lam)[:2]
@@ -619,7 +577,7 @@ def part_validation():
             o = tmm.coh_tmm(pol, [1.0, 2.0 + 0j, 1.45, 3.5], [np.inf, 80, 120, np.inf], th, lam)
             errs.append(np.max(abs(o["R"] + o["T"] - 1)))
     macro("valEnergy", max(errs), "{:.0e}")
-    # (b) graphene: one undoped layer should absorb pi * (fine-structure constant)
+    # graphene absorption should be close to pi * alpha (~2.29%)
     Ng = np.sqrt(ph.graphene_eps(ph.eV_from_nm(lam), EF=0.0001, mu_cm2=3000))
     R, T, A = tmm.unpolarised([1.0, Ng, 1.0], [np.inf, ph.GRAPHENE_D * 1e9, np.inf], 0.0, lam)
     Nd = np.sqrt(ph.graphene_eps(ph.eV_from_nm(lam), EF=0.45, mu_cm2=3000))
@@ -629,16 +587,16 @@ def part_validation():
     save("val_graphene.csv", ["lam", "A0", "Adoped", "pialpha"], [lam, A * 100, Ad * 100, pi_alpha])
     macro("valGraA", A[np.argmin(abs(lam - 550))] * 100, "{:.2f}")
     macro("pialpha", np.pi * alpha_fs * 100, "{:.2f}")
-    # (c) silver: bulk reflectance and resistivity
+    # bulk silver reflectance and resistivity
     Nag = np.sqrt(ph.ag_eps(ph.eV_from_nm(lam)))
     Rag = np.abs((1 - Nag) / (1 + Nag)) ** 2
     macro("valAgR", Rag[np.argmin(abs(lam - 550))] * 100, "{:.1f}")
-    macro("valAgRho", ph.ag_resistivity(1e6) * 1e8, "{:.2f}")   # a 1 mm film is effectively bulk
-    # (d) the spectrum, checked through the Shockley-Queisser limit
+    macro("valAgRho", ph.ag_resistivity(1e6) * 1e8, "{:.2f}")   # 1 mm approx bulk
+    # shockley queisser check on the solar spectrum
     lam_fine = np.linspace(280, 4000, 15000)
     G = ph.am15g(lam_fine)
     save("spectrum.csv", ["lam", "G"], [lam_fine[::10], G[::10]])
-    r = sq.sq_efficiency([1.12, 1.34, 1.6], lam_fine, G)    # silicon, the SQ optimum, perovskite
+    r = sq.sq_efficiency([1.12, 1.34, 1.6], lam_fine, G)    # Si, SQ peak, perovskite
     macro("JscSi", r[0][1])
     macro("JscPsk", r[2][1])
     macro("SQmax", r[1][3], "{:.1f}")
@@ -646,20 +604,19 @@ def part_validation():
     Egs = np.linspace(0.7, 2.6, 60)
     rr = np.array(sq.sq_efficiency(Egs, lam_fine, G))
     save("sq.csv", ["Eg", "Jsc", "Vmp", "eta"], rr.T)
-    # (e) mobility limit of ZnO at 5e20 cm^-3, to compare with Ellmer (2001)
+    # ZnO mobility limit check against ellmer 2001
     macro("valMuZnO", ph.mu_total(5e20, el.HOSTS["ZnO"]), "{:.0f}")
     macro("valMuITO", ph.mu_total(1e21, el.HOSTS["In2O3"]), "{:.0f}")
 
 
 def part_spectrum_sensitivity():
-    """Rerun the baseline with a plain 5778 K black body in place of AM1.5G,
-    to see whether the ranking depends on the exact spectrum."""
+    """rerun baseline with a 5778 K blackbody to check if ranking shifts"""
     progress("spectral sensitivity (pure 5778 K black body)")
     lam = dv.LAM
     saved_flux = dv.FLUX.copy()
     bb = ph.planck_toa(lam, 5778.0)
     lam_norm = np.linspace(280, 4000, 5000)
-    bb *= 1000 / trapezoid(ph.planck_toa(lam_norm, 5778.0), lam_norm)   # scale to 1000 W/m^2
+    bb *= 1000 / trapezoid(ph.planck_toa(lam_norm, 5778.0), lam_norm)   # scale to 1000 W/m2
     dv.FLUX = ph.photon_flux(lam, bb)
     dv._AR_CACHE.clear()
     out = []
@@ -676,19 +633,17 @@ def part_spectrum_sensitivity():
                 b = dv.optimise(arch, "network", dv.network_family(nm))
             etas.append(b["eta"])
         out.append(etas)
-    dv.FLUX = saved_flux           # put the real spectrum back
+    dv.FLUX = saved_flux           # restore am1.5g flux
     dv._AR_CACHE.clear()
     return np.array(out)
 
 
 def write_numbers():
-    """Write every stored number to numbers.tex (for LaTeX) and numbers.json
-    (for the slide-deck script)."""
     with open(os.path.join(OUT, "numbers.tex"), "w", encoding="utf-8") as f:
-        f.write("% generated by run_all.py -- do not edit\n")
+        f.write("% generated by run_all.py\n")
         for k, v in sorted(NUM.items()):
             f.write(f"\\newcommand{{\\{k}}}{{{v}}}\n")
-    with open(os.path.join(OUT, "numbers.json"), "w") as f:
+    with open(os.path.join(OUT, "numbers.json"), "w", encoding="utf-8") as f:
         json.dump(NUM, f, indent=1)
 
 
@@ -706,7 +661,7 @@ if __name__ == "__main__":
     part_nscan()
     sens = part_spectrum_sensitivity()
     base = np.array([[res[a][nm]["eta"] for nm in el.ORDER] for a in ["SHJ", "PSK"]])
-    # how far the black-body spectrum moves each electrode, and its rank
+    # check rank agreement and max shift under blackbody spectrum
     for k, a in enumerate(["SHJ", "PSK"]):
         rank_base = np.argsort(np.argsort(-base[k]))
         rank_bb = np.argsort(np.argsort(-sens[k]))
@@ -714,7 +669,7 @@ if __name__ == "__main__":
         macro(f"sensMaxShift{a}", np.max(abs((sens[k] - sens[k].mean()) - (base[k] - base[k].mean()))))
     save("sensitivity.csv", ["i", "SHJbase", "SHJbb", "PSKbase", "PSKbb"],
          [np.arange(len(el.ORDER)), base[0], sens[0], base[1], sens[1]], fmt="%.4f")
-    write_numbers()                 # save once before the slow Monte Carlo
+    write_numbers()                 # save before monte carlo
     part_montecarlo(6 if QUICK else 300)
     write_numbers()
     progress(f"done in {time.time() - t0:.0f} s")
